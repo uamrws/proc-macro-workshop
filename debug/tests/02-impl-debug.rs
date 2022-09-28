@@ -1,6 +1,6 @@
 // Emit an implementation of std::fmt::Debug for a basic struct with named
 // fields and no generic type parameters.
-//
+
 // Note that there is no enforced relationship between the name of a derive
 // macro and the trait that it implements. Here the macro is named CustomDebug
 // but the trait impls it generates are for Debug. As a convention, typically
