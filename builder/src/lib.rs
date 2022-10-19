@@ -72,11 +72,11 @@ fn impl_builder_macro(ast: &DeriveInput) -> TokenStream {
 }
 
 struct BuilderStructHelper {
-    field_tokens: Vec<Box<dyn ToTokens>>,
-    field_set_tokens: Vec<Box<dyn ToTokens>>,
-    field_check_tokens: Vec<Box<dyn ToTokens>>,
-    build_tokens: Vec<Box<dyn ToTokens>>,
-    init_tokens: Vec<Box<dyn ToTokens>>,
+    field_tokens: Vec<Box<proc_macro2::TokenStream>>,
+    field_set_tokens: Vec<Box<proc_macro2::TokenStream>>,
+    field_check_tokens: Vec<Box<proc_macro2::TokenStream>>,
+    build_tokens: Vec<Box<proc_macro2::TokenStream>>,
+    init_tokens: Vec<Box<proc_macro2::TokenStream>>,
 }
 impl BuilderStructHelper {
     fn new() -> Self {
@@ -108,7 +108,7 @@ impl BuilderStructHelper {
         let mut field_type = &field.ty;
         let result;
         if self.is_option(field) {
-            result = syn::parse::<SingleTypeParser>(field_type.to_token_stream().into()).unwrap();
+            result = syn::parse2::<SingleTypeParser>(field_type.to_token_stream()).unwrap();
             field_type = &result.ty;
         }
         self.field_set_tokens.push(Box::new(quote_spanned! {
@@ -118,9 +118,13 @@ impl BuilderStructHelper {
                 self
             }
         }));
-
-        if let Ok(token) = self.parse_builder_attribute(field) {
-            self.field_set_tokens.push(Box::new(token))
+        for i in &field.attrs {
+            if i.path.is_ident("builder") {
+                let token = self
+                    .parse_builder_attribute(field, i)
+                    .unwrap_or_else(syn::Error::into_compile_error);
+                self.field_set_tokens.push(Box::new(token))
+            }
         }
     }
 
@@ -168,56 +172,55 @@ impl BuilderStructHelper {
         }
     }
 
-    fn parse_builder_attribute(&self, field: &Field) -> syn::Result<impl ToTokens> {
-        for i in &field.attrs {
-            if i.path.is_ident("builder") {
-                let name_value = i.parse_args::<syn::MetaNameValue>()?;
-                let tokens = if name_value.path.is_ident("each") {
-                    if let syn::Lit::Str(s) = name_value.lit {
-                        let ident = syn::parse_str::<Ident>(&s.value())?;
-                        let field_ident = self.get_field_ident(field);
-                        let mut field_type = &field.ty;
-                        let parse =
-                            syn::parse::<SingleTypeParser>(field_type.to_token_stream().into())?;
-                        if parse.ident != "Vec" {
-                            syn::Error::new(
-                                field.span(),
-                                "builder attribute expected on a type Vec",
-                            )
-                            .to_compile_error()
-                        } else {
-                            field_type = &parse.ty;
-                            if field_ident != ident {
-                                quote_spanned! {
-                                    i.span()=>
-                                    fn #ident(&mut self, #ident: #field_type) -> &mut Self {
-                                        let value = self.#field_ident.get_or_insert(Vec::new());
-                                        value.push(#ident);
-                                        self
-                                    }
-                                }
-                            } else {
-                                return Err(syn::Error::new(
-                                    i.span(),
-                                    "builder attribute arg cannot equal to the field name",
-                                ));
-                            }
-                        }
-                    } else {
-                        syn::Error::new(i.span(), "invalid builder attribute, not a str literal")
-                            .to_compile_error()
-                    }
+    fn parse_builder_attribute(
+        &self,
+        field: &Field,
+        attr: &syn::Attribute,
+    ) -> syn::Result<proc_macro2::TokenStream> {
+        let name_value = attr.parse_args::<syn::MetaNameValue>()?;
+        if name_value.path.is_ident("each") {
+            if let syn::Lit::Str(s) = name_value.lit {
+                let ident = syn::parse_str::<Ident>(&s.value())?;
+                let field_ident = self.get_field_ident(field);
+                let mut field_type = &field.ty;
+                let parse = syn::parse2::<SingleTypeParser>(field_type.to_token_stream())?;
+                if parse.ident != "Vec" {
+                    Err(syn::Error::new(
+                        field.span(),
+                        "builder attribute expected on a type Vec",
+                    ))
                 } else {
-                    syn::Error::new(
-                        i.parse_meta().unwrap().span(),
-                        r#"expected `builder(each = "...")`"#,
-                    )
-                    .to_compile_error()
-                };
-                return Ok(tokens);
+                    field_type = &parse.ty;
+                    if field_ident != ident {
+                        Ok(quote_spanned! {
+                            attr.span()=>
+                            fn #ident(&mut self, #ident: #field_type) -> &mut Self {
+                                let value = self.#field_ident.get_or_insert(Vec::new());
+                                value.push(#ident);
+                                self
+                            }
+                        })
+                    } else {
+                        Ok(quote::quote!())
+                    }
+                }
+            } else {
+                Err(syn::Error::new(
+                    attr.span(),
+                    "invalid builder attribute, not a str literal",
+                ))
             }
+        } else {
+            let e = syn::Error::new_spanned(
+                attr.parse_meta().unwrap(),
+                r#"expected `builder(each = "...")`"#,
+            );
+            println!("{:#?}", e.span());
+            Err(syn::Error::new_spanned(
+                attr.parse_meta().unwrap(),
+                r#"expected `builder(each = "...")`"#,
+            ))
         }
-        Err(syn::Error::new(field.span(), "no builder attribute"))
     }
 }
 

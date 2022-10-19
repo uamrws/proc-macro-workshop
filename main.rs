@@ -1,35 +1,28 @@
-// Emit an implementation of std::fmt::Debug for a basic struct with named
-// fields and no generic type parameters.
-
-// Note that there is no enforced relationship between the name of a derive
-// macro and the trait that it implements. Here the macro is named CustomDebug
-// but the trait impls it generates are for Debug. As a convention, typically
-// derive macros implement a trait with the same name as a macro.
+// Ensure that your macro reports a reasonable error message when the caller
+// mistypes the inert attribute in various ways. This is a compile_fail test.
+//
+// The preferred way to report an error from a procedural macro is by including
+// an invocation of the standard library's compile_error macro in the code
+// emitted by the procedural macro.
 //
 //
 // Resources:
 //
-//   - The Debug trait:
-//     https://doc.rust-lang.org/std/fmt/trait.Debug.html
+//   - The compile_error macro for emitting basic custom errors:
+//     https://doc.rust-lang.org/std/macro.compile_error.html
 //
-//   - The DebugStruct helper for formatting structs correctly:
-//     https://doc.rust-lang.org/std/fmt/struct.DebugStruct.html
+//   - Lowering a syn::Error into an invocation of compile_error:
+//     https://docs.rs/syn/1.0/syn/struct.Error.html#method.to_compile_error
 
-use derive_debug::CustomDebug;
+use derive_builder::Builder;
 
-#[derive(CustomDebug)]
-pub struct Field {
-    name: &'static str,
-    bitmask: u8,
+#[derive(Builder)]
+pub struct Command {
+    executable: String,
+    #[builder(eac = "arg")]
+    args: Vec<String>,
+    env: Vec<String>,
+    current_dir: Option<String>,
 }
 
-fn main() {
-    let f = Field {
-        name: "F",
-        bitmask: 0b00011100,
-    };
-
-    let debug = format!("{:?}", f);
-
-    assert!(debug.starts_with(r#"Field { name: "F","#));
-}
+fn main() {}
