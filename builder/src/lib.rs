@@ -72,11 +72,11 @@ fn impl_builder_macro(ast: &DeriveInput) -> TokenStream {
 }
 
 struct BuilderStructHelper {
-    field_tokens: Vec<Box<proc_macro2::TokenStream>>,
-    field_set_tokens: Vec<Box<proc_macro2::TokenStream>>,
-    field_check_tokens: Vec<Box<proc_macro2::TokenStream>>,
-    build_tokens: Vec<Box<proc_macro2::TokenStream>>,
-    init_tokens: Vec<Box<proc_macro2::TokenStream>>,
+    field_tokens: Vec<proc_macro2::TokenStream>,
+    field_set_tokens: Vec<proc_macro2::TokenStream>,
+    field_check_tokens: Vec<proc_macro2::TokenStream>,
+    build_tokens: Vec<proc_macro2::TokenStream>,
+    init_tokens: Vec<proc_macro2::TokenStream>,
 }
 impl BuilderStructHelper {
     fn new() -> Self {
@@ -93,13 +93,11 @@ impl BuilderStructHelper {
         let field_ident = self.get_field_ident(field);
         let field_type = &field.ty;
         if self.is_option(field) {
-            self.field_tokens.push(Box::new(
-                quote_spanned!(field.span()=>#field_ident: #field_type),
-            ))
+            self.field_tokens
+                .push(quote_spanned!(field.span()=>#field_ident: #field_type))
         } else {
-            self.field_tokens.push(Box::new(
-                quote_spanned!(field.span()=>#field_ident: std::option::Option<#field_type>),
-            ));
+            self.field_tokens
+                .push(quote_spanned!(field.span()=>#field_ident: std::option::Option<#field_type>));
         }
     }
 
@@ -111,19 +109,19 @@ impl BuilderStructHelper {
             result = syn::parse2::<SingleTypeParser>(field_type.to_token_stream()).unwrap();
             field_type = &result.ty;
         }
-        self.field_set_tokens.push(Box::new(quote_spanned! {
+        self.field_set_tokens.push(quote_spanned! {
             field_ident.span()=>
             fn #field_ident(&mut self, #field_ident: #field_type) -> &mut Self {
                 self.#field_ident = std::option::Option::Some(#field_ident);
                 self
             }
-        }));
+        });
         for i in &field.attrs {
             if i.path.is_ident("builder") {
                 let token = self
                     .parse_builder_attribute(field, i)
                     .unwrap_or_else(syn::Error::into_compile_error);
-                self.field_set_tokens.push(Box::new(token))
+                self.field_set_tokens.push(token)
             }
         }
     }
@@ -132,12 +130,12 @@ impl BuilderStructHelper {
         let field_ident = self.get_field_ident(field);
         let err_message = format!("{} must not be none", field_ident);
         if !self.is_option(field) {
-            self.field_check_tokens.push(Box::new(quote_spanned!(
+            self.field_check_tokens.push(quote_spanned!(
                 field.span()=>
                 if self.#field_ident.is_none() {
                     return Err(#err_message.into());
                 }
-            )));
+            ));
         }
     }
     fn impl_builder_build_method(&mut self, field: &Field) {
@@ -147,17 +145,16 @@ impl BuilderStructHelper {
         } else {
             quote_spanned!(field.span()=> self.#field_ident.take().unwrap())
         };
-        self.build_tokens.push(Box::new(
-            quote_spanned!(field.span()=> #field_ident: #set_token),
-        ))
+        self.build_tokens
+            .push(quote_spanned!(field.span()=> #field_ident: #set_token))
     }
 
     fn impl_builder_init(&mut self, field: &Field) {
         let field_ident = self.get_field_ident(field);
-        self.init_tokens.push(Box::new(quote_spanned! {
+        self.init_tokens.push(quote_spanned! {
             field.span()=>
             #field_ident: std::option::Option::None
-        }))
+        })
     }
 
     fn get_field_ident(&self, field: &Field) -> Ident {
